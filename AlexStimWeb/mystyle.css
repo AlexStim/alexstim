@@ -1,0 +1,41 @@
+body {
+    background: #475AFD; /* For browsers that do not support gradients */
+    background: -webkit-linear-gradient(#475AFD, rgb(98, 196, 241)); /* For Safari 5.1 to 6.0 */
+    background: -o-linear-gradient(#475AFD, rgb(98, 196, 241)); /* For Opera 11.1 to 12.0 */
+    background: -moz-linear-gradient(#475AFD, rgb(98, 196, 241)); /* For Firefox 3.6 to 15 */
+    background: linear-gradient(#475AFD, rgb(98, 196, 241)); /* Standard syntax */
+    background-color: #475AFD;
+    display: flex;
+    min-height: 100vh;
+    flex-direction: column;
+}
+
+main {
+    flex: 1 0 auto;
+  }
+
+h1, h2, h3 {
+    color: #ffffff;
+    font-family: 'Lekton', sans-serif;
+    font-weight: 700;
+}
+
+p {
+    color: #ffffff;
+}
+
+#insider {
+    color: black;
+}
+
+#grey {
+    background-color: #ececec;
+}
+
+.page-footer {
+    background-color: #fd6f47;
+}
+.card-title {
+    font-family: 'Lekton', sans-serif;
+    font-weight: 700;
+}
