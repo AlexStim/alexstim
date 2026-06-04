@@ -1,33 +1,21 @@
+require('dotenv').config();
 const express = require('express');
-const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
+const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
-const SEED_PATH = path.join(__dirname, 'data', 'db.json');
-const DB_PATH = process.env.VERCEL ? '/tmp/db.json' : SEED_PATH;
 
-function ensureDB() {
-  if (process.env.VERCEL && !fs.existsSync(DB_PATH)) {
-    fs.copyFileSync(SEED_PATH, DB_PATH);
-  }
-}
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_ANON_KEY,
+  { auth: { persistSession: false } }
+);
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// --- DB helpers ---
-
-function readDB() {
-  ensureDB();
-  return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
-}
-
-function writeDB(data) {
-  fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
-}
-
-// --- Rotation engine ---
+// ── Rotation helpers ──────────────────────────────────────────
 
 function computeNextRotation(frequency, dayOfWeek, dayOfMonth, from) {
   const base = from ? new Date(from) : new Date();
@@ -36,9 +24,8 @@ function computeNextRotation(frequency, dayOfWeek, dayOfMonth, from) {
     next.setDate(next.getDate() + 1);
     next.setHours(0, 0, 0, 0);
   } else if (frequency === 'weekly') {
-    const dow = dayOfWeek ?? 1; // 0=Sun, 1=Mon
-    const current = next.getDay();
-    const diff = (dow - current + 7) % 7 || 7;
+    const dow = dayOfWeek ?? 1;
+    const diff = (dow - next.getDay() + 7) % 7 || 7;
     next.setDate(next.getDate() + diff);
     next.setHours(0, 0, 0, 0);
   } else if (frequency === 'monthly') {
@@ -50,47 +37,63 @@ function computeNextRotation(frequency, dayOfWeek, dayOfMonth, from) {
   return next.toISOString();
 }
 
-function applyRotation(db) {
-  const { rotation, spaces, users } = db;
-  const order = rotation.order.filter(uid => users.find(u => u.id === uid));
-  const count = rotation.rotationCount;
+async function getRotationOrder() {
+  const { data } = await supabase.from('rotation_order').select('user_id').order('position');
+  return (data || []).map(r => r.user_id);
+}
 
-  db.assignments = [];
+async function getSpaces() {
+  const { data } = await supabase.from('spaces').select('*').order('created_at');
+  return data || [];
+}
+
+async function applyRotation(rotationCount, order, spaces) {
+  await supabase.from('assignments').delete().not('user_id', 'is', null);
+  const rows = [];
   for (let i = 0; i < order.length; i++) {
-    const spaceIndex = (i + count) % spaces.length;
-    if (spaces[spaceIndex]) {
-      db.assignments.push({ userId: order[i], spaceId: spaces[spaceIndex].id });
-    }
+    const sp = spaces[(i + rotationCount) % spaces.length];
+    if (sp) rows.push({ user_id: order[i], space_id: sp.id });
   }
-  // spaces with no assigned user get no entry (vacant)
+  if (rows.length) await supabase.from('assignments').insert(rows);
 }
 
-function triggerRotationIfDue(db) {
-  const { rotation } = db;
-  if (!rotation.nextRotation) return;
-  if (new Date() >= new Date(rotation.nextRotation)) {
-    rotation.lastRotation = new Date().toISOString();
-    rotation.rotationCount = (rotation.rotationCount || 0) + 1;
-    applyRotation(db);
-    rotation.nextRotation = computeNextRotation(
-      rotation.frequency,
-      rotation.dayOfWeek,
-      rotation.dayOfMonth,
-      rotation.lastRotation
-    );
+async function checkAndRotate() {
+  const { data: rot } = await supabase.from('rotation').select('*').eq('id', 1).single();
+  if (!rot?.next_rotation) return;
+  if (new Date() >= new Date(rot.next_rotation)) {
+    const newCount = (rot.rotation_count || 0) + 1;
+    const now = new Date().toISOString();
+    const [order, spaces] = await Promise.all([getRotationOrder(), getSpaces()]);
+    await applyRotation(newCount, order, spaces);
+    await supabase.from('rotation').update({
+      rotation_count: newCount,
+      last_rotation: now,
+      next_rotation: computeNextRotation(rot.frequency, rot.day_of_week, rot.day_of_month, now)
+    }).eq('id', 1);
   }
 }
 
-// --- Auth middleware ---
+// Normalise a rotation row to the camelCase shape the frontend expects
+function fmtRotation(rot, order) {
+  return {
+    frequency: rot.frequency,
+    dayOfWeek: rot.day_of_week,
+    dayOfMonth: rot.day_of_month,
+    nextRotation: rot.next_rotation,
+    lastRotation: rot.last_rotation,
+    rotationCount: rot.rotation_count,
+    order: order || []
+  };
+}
 
-function requireAuth(req, res, next) {
+// ── Auth middleware ───────────────────────────────────────────
+
+async function requireAuth(req, res, next) {
   const userId = req.headers['x-user-id'];
   if (!userId) return res.status(401).json({ error: 'Not authenticated' });
-  const db = readDB();
-  const user = db.users.find(u => u.id === userId);
+  const { data: user } = await supabase.from('users').select('*').eq('id', userId).single();
   if (!user) return res.status(401).json({ error: 'User not found' });
   req.user = user;
-  req.db = db;
   next();
 }
 
@@ -99,296 +102,315 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-// --- Auth routes ---
+// ── Auth ──────────────────────────────────────────────────────
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   const { name, pin } = req.body;
   if (!name || !pin) return res.status(400).json({ error: 'Name and PIN required' });
-  const db = readDB();
-  const user = db.users.find(
-    u => u.name.toLowerCase() === name.toLowerCase() && u.pin === pin
-  );
+  const { data: user } = await supabase
+    .from('users').select('id, name, role')
+    .ilike('name', name).eq('pin', pin).maybeSingle();
   if (!user) return res.status(401).json({ error: 'Invalid name or PIN' });
-  res.json({ id: user.id, name: user.name, role: user.role });
+  res.json(user);
 });
 
-// --- User routes ---
+// ── User endpoints ────────────────────────────────────────────
 
-app.get('/api/me', requireAuth, (req, res) => {
-  const db = req.db;
-  triggerRotationIfDue(db);
-  writeDB(db);
+app.get('/api/me', requireAuth, async (req, res) => {
+  await checkAndRotate();
 
-  const assignment = db.assignments.find(a => a.userId === req.user.id);
-  const space = assignment ? db.spaces.find(s => s.id === assignment.spaceId) : null;
-  const incoming = db.swapRequests.filter(
-    r => r.targetId === req.user.id && r.status === 'pending'
-  ).map(r => {
-    const requester = db.users.find(u => u.id === r.requesterId);
-    const theirSpace = db.spaces.find(s => s.id === r.requesterSpaceId);
-    const yourSpace = db.spaces.find(s => s.id === r.targetSpaceId);
-    return { ...r, requesterName: requester?.name, theirSpace, yourSpace };
-  });
-  const outgoing = db.swapRequests.filter(
-    r => r.requesterId === req.user.id && r.status === 'pending'
-  ).map(r => {
-    const target = db.users.find(u => u.id === r.targetId);
-    const theirSpace = db.spaces.find(s => s.id === r.targetSpaceId);
-    return { ...r, targetName: target?.name, theirSpace };
-  });
+  const [
+    { data: assignRow },
+    { data: rot },
+    { data: incoming },
+    { data: outgoing }
+  ] = await Promise.all([
+    supabase.from('assignments').select('space_id').eq('user_id', req.user.id).maybeSingle(),
+    supabase.from('rotation').select('*').eq('id', 1).single(),
+    supabase.from('swap_requests').select('*').eq('target_id', req.user.id).eq('status', 'pending'),
+    supabase.from('swap_requests').select('*').eq('requester_id', req.user.id).eq('status', 'pending')
+  ]);
+
+  let space = null;
+  if (assignRow?.space_id) {
+    const { data } = await supabase.from('spaces').select('*').eq('id', assignRow.space_id).single();
+    space = data;
+  }
+
+  // Enrich incoming with user/space names
+  const [{ data: allUsers }, { data: allSpaces }] = await Promise.all([
+    supabase.from('users').select('id, name'),
+    supabase.from('spaces').select('id, name, description')
+  ]);
+  const userMap = Object.fromEntries((allUsers || []).map(u => [u.id, u]));
+  const spaceMap = Object.fromEntries((allSpaces || []).map(s => [s.id, s]));
 
   res.json({
     user: { id: req.user.id, name: req.user.name, role: req.user.role },
     space,
-    incoming,
-    outgoing,
-    nextRotation: db.rotation.nextRotation,
-    lastRotation: db.rotation.lastRotation,
-    rotationFrequency: db.rotation.frequency
+    incoming: (incoming || []).map(r => ({
+      ...r,
+      requesterId: r.requester_id, targetId: r.target_id,
+      requesterName: userMap[r.requester_id]?.name,
+      theirSpace: spaceMap[r.requester_space_id],
+      yourSpace: spaceMap[r.target_space_id]
+    })),
+    outgoing: (outgoing || []).map(r => ({
+      ...r,
+      requesterId: r.requester_id, targetId: r.target_id,
+      targetName: userMap[r.target_id]?.name,
+      theirSpace: spaceMap[r.target_space_id]
+    })),
+    nextRotation: rot?.next_rotation,
+    lastRotation: rot?.last_rotation,
+    rotationFrequency: rot?.frequency
   });
 });
 
-app.get('/api/users', requireAuth, (req, res) => {
-  const db = req.db;
-  const users = db.users.map(u => {
-    const assignment = db.assignments.find(a => a.userId === u.id);
-    const space = assignment ? db.spaces.find(s => s.id === assignment.spaceId) : null;
-    return { id: u.id, name: u.name, role: u.role, space };
-  });
-  res.json(users);
+app.get('/api/users', requireAuth, async (req, res) => {
+  const [{ data: users }, { data: assignments }, { data: spaces }] = await Promise.all([
+    supabase.from('users').select('id, name, role').order('created_at'),
+    supabase.from('assignments').select('user_id, space_id'),
+    supabase.from('spaces').select('*')
+  ]);
+  const assignMap = Object.fromEntries((assignments || []).map(a => [a.user_id, a.space_id]));
+  const spaceMap  = Object.fromEntries((spaces || []).map(s => [s.id, s]));
+  res.json((users || []).map(u => ({ ...u, space: spaceMap[assignMap[u.id]] || null })));
 });
 
-// --- Swap routes ---
+// ── Swaps ─────────────────────────────────────────────────────
 
-app.post('/api/swaps/request', requireAuth, (req, res) => {
+app.post('/api/swaps/request', requireAuth, async (req, res) => {
   const { targetUserId } = req.body;
   if (!targetUserId) return res.status(400).json({ error: 'targetUserId required' });
-
-  const db = req.db;
-  const myAssignment = db.assignments.find(a => a.userId === req.user.id);
-  const theirAssignment = db.assignments.find(a => a.userId === targetUserId);
-
-  if (!myAssignment) return res.status(400).json({ error: 'You have no parking space assigned' });
-  if (!theirAssignment) return res.status(400).json({ error: 'Target user has no parking space assigned' });
   if (req.user.id === targetUserId) return res.status(400).json({ error: 'Cannot swap with yourself' });
 
-  const existing = db.swapRequests.find(
-    r => r.status === 'pending' &&
-      ((r.requesterId === req.user.id && r.targetId === targetUserId) ||
-       (r.requesterId === targetUserId && r.targetId === req.user.id))
-  );
+  const [{ data: myAssign }, { data: theirAssign }] = await Promise.all([
+    supabase.from('assignments').select('space_id').eq('user_id', req.user.id).maybeSingle(),
+    supabase.from('assignments').select('space_id').eq('user_id', targetUserId).maybeSingle()
+  ]);
+  if (!myAssign)    return res.status(400).json({ error: 'You have no parking space assigned' });
+  if (!theirAssign) return res.status(400).json({ error: 'Target user has no parking space assigned' });
+
+  const { data: existing } = await supabase.from('swap_requests')
+    .select('id').eq('status', 'pending')
+    .or(`and(requester_id.eq.${req.user.id},target_id.eq.${targetUserId}),and(requester_id.eq.${targetUserId},target_id.eq.${req.user.id})`)
+    .maybeSingle();
   if (existing) return res.status(400).json({ error: 'A pending swap request already exists with this user' });
 
-  const swap = {
+  const { data: swap, error } = await supabase.from('swap_requests').insert({
     id: uuidv4(),
-    requesterId: req.user.id,
-    targetId: targetUserId,
-    requesterSpaceId: myAssignment.spaceId,
-    targetSpaceId: theirAssignment.spaceId,
-    status: 'pending',
-    createdAt: new Date().toISOString()
-  };
-  db.swapRequests.push(swap);
-  writeDB(db);
+    requester_id: req.user.id,
+    target_id: targetUserId,
+    requester_space_id: myAssign.space_id,
+    target_space_id: theirAssign.space_id,
+    status: 'pending'
+  }).select().single();
+  if (error) return res.status(500).json({ error: error.message });
   res.json(swap);
 });
 
-app.post('/api/swaps/:id/accept', requireAuth, (req, res) => {
-  const db = req.db;
-  const swap = db.swapRequests.find(r => r.id === req.params.id);
+app.post('/api/swaps/:id/accept', requireAuth, async (req, res) => {
+  const { data: swap } = await supabase.from('swap_requests').select('*').eq('id', req.params.id).single();
   if (!swap) return res.status(404).json({ error: 'Swap request not found' });
-  if (swap.targetId !== req.user.id) return res.status(403).json({ error: 'Not your swap request' });
+  if (swap.target_id !== req.user.id) return res.status(403).json({ error: 'Not your swap request' });
   if (swap.status !== 'pending') return res.status(400).json({ error: 'Request already resolved' });
 
-  // Execute the swap
-  const reqAssignment = db.assignments.find(a => a.userId === swap.requesterId);
-  const tgtAssignment = db.assignments.find(a => a.userId === swap.targetId);
-  if (reqAssignment && tgtAssignment) {
-    const tmp = reqAssignment.spaceId;
-    reqAssignment.spaceId = tgtAssignment.spaceId;
-    tgtAssignment.spaceId = tmp;
-  }
-
-  swap.status = 'accepted';
-  swap.resolvedAt = new Date().toISOString();
-
-  // Cancel any other pending swaps involving these two users' spaces
-  db.swapRequests
-    .filter(r => r.id !== swap.id && r.status === 'pending' &&
-      (r.requesterId === swap.requesterId || r.requesterId === swap.targetId ||
-       r.targetId === swap.requesterId || r.targetId === swap.targetId))
-    .forEach(r => { r.status = 'cancelled'; r.resolvedAt = new Date().toISOString(); });
-
-  writeDB(db);
+  const now = new Date().toISOString();
+  await Promise.all([
+    supabase.from('assignments').update({ space_id: swap.target_space_id }).eq('user_id', swap.requester_id),
+    supabase.from('assignments').update({ space_id: swap.requester_space_id }).eq('user_id', swap.target_id),
+    supabase.from('swap_requests').update({ status: 'accepted', resolved_at: now }).eq('id', swap.id)
+  ]);
+  // Cancel other pending swaps involving either user
+  await supabase.from('swap_requests')
+    .update({ status: 'cancelled', resolved_at: now })
+    .neq('id', swap.id).eq('status', 'pending')
+    .or(`requester_id.eq.${swap.requester_id},requester_id.eq.${swap.target_id},target_id.eq.${swap.requester_id},target_id.eq.${swap.target_id}`);
   res.json({ success: true });
 });
 
-app.post('/api/swaps/:id/reject', requireAuth, (req, res) => {
-  const db = req.db;
-  const swap = db.swapRequests.find(r => r.id === req.params.id);
+app.post('/api/swaps/:id/reject', requireAuth, async (req, res) => {
+  const { data: swap } = await supabase.from('swap_requests').select('*').eq('id', req.params.id).single();
   if (!swap) return res.status(404).json({ error: 'Swap request not found' });
-  if (swap.targetId !== req.user.id) return res.status(403).json({ error: 'Not your swap request' });
+  if (swap.target_id !== req.user.id) return res.status(403).json({ error: 'Not your swap request' });
   if (swap.status !== 'pending') return res.status(400).json({ error: 'Request already resolved' });
-
-  swap.status = 'rejected';
-  swap.resolvedAt = new Date().toISOString();
-  writeDB(db);
+  await supabase.from('swap_requests').update({ status: 'rejected', resolved_at: new Date().toISOString() }).eq('id', swap.id);
   res.json({ success: true });
 });
 
-app.post('/api/swaps/:id/cancel', requireAuth, (req, res) => {
-  const db = req.db;
-  const swap = db.swapRequests.find(r => r.id === req.params.id);
+app.post('/api/swaps/:id/cancel', requireAuth, async (req, res) => {
+  const { data: swap } = await supabase.from('swap_requests').select('*').eq('id', req.params.id).single();
   if (!swap) return res.status(404).json({ error: 'Swap request not found' });
-  if (swap.requesterId !== req.user.id) return res.status(403).json({ error: 'Not your swap request' });
+  if (swap.requester_id !== req.user.id) return res.status(403).json({ error: 'Not your swap request' });
   if (swap.status !== 'pending') return res.status(400).json({ error: 'Request already resolved' });
-
-  swap.status = 'cancelled';
-  swap.resolvedAt = new Date().toISOString();
-  writeDB(db);
+  await supabase.from('swap_requests').update({ status: 'cancelled', resolved_at: new Date().toISOString() }).eq('id', swap.id);
   res.json({ success: true });
 });
 
-// --- Admin routes ---
+// ── Admin ─────────────────────────────────────────────────────
 
-app.get('/api/admin/overview', requireAuth, requireAdmin, (req, res) => {
-  const db = req.db;
-  triggerRotationIfDue(db);
-  writeDB(db);
+app.get('/api/admin/overview', requireAuth, requireAdmin, async (req, res) => {
+  await checkAndRotate();
+  const [
+    { data: users },
+    { data: spaces },
+    { data: assignments },
+    { data: swapRequests },
+    { data: rot },
+    { data: rotOrder }
+  ] = await Promise.all([
+    supabase.from('users').select('id, name, role').order('created_at'),
+    supabase.from('spaces').select('*').order('created_at'),
+    supabase.from('assignments').select('*'),
+    supabase.from('swap_requests').select('*').order('created_at', { ascending: false }),
+    supabase.from('rotation').select('*').eq('id', 1).single(),
+    supabase.from('rotation_order').select('user_id').order('position')
+  ]);
 
-  const users = db.users.map(u => {
-    const assignment = db.assignments.find(a => a.userId === u.id);
-    const space = assignment ? db.spaces.find(s => s.id === assignment.spaceId) : null;
-    return { id: u.id, name: u.name, role: u.role, space };
+  const assignByUser  = Object.fromEntries((assignments || []).map(a => [a.user_id, a.space_id]));
+  const assignBySpace = Object.fromEntries((assignments || []).map(a => [a.space_id, a.user_id]));
+  const spaceMap = Object.fromEntries((spaces || []).map(s => [s.id, s]));
+  const userMap  = Object.fromEntries((users  || []).map(u => [u.id, u]));
+
+  res.json({
+    users: (users || []).map(u => ({ ...u, space: spaceMap[assignByUser[u.id]] || null })),
+    spaces: (spaces || []).map(s => ({
+      ...s,
+      assignedTo: assignBySpace[s.id] ? { id: assignBySpace[s.id], name: userMap[assignBySpace[s.id]]?.name } : null
+    })),
+    assignments: assignments || [],
+    swapRequests: (swapRequests || []).map(r => ({
+      ...r,
+      requesterId: r.requester_id, targetId: r.target_id,
+      requesterSpaceId: r.requester_space_id, targetSpaceId: r.target_space_id,
+      createdAt: r.created_at
+    })),
+    rotation: fmtRotation(rot || {}, (rotOrder || []).map(r => r.user_id))
   });
-  const spaces = db.spaces.map(s => {
-    const assignment = db.assignments.find(a => a.spaceId === s.id);
-    const user = assignment ? db.users.find(u => u.id === assignment.userId) : null;
-    return { ...s, assignedTo: user ? { id: user.id, name: user.name } : null };
-  });
-  res.json({ users, spaces, rotation: db.rotation, swapRequests: db.swapRequests });
 });
 
-app.post('/api/admin/users', requireAuth, requireAdmin, (req, res) => {
+app.post('/api/admin/users', requireAuth, requireAdmin, async (req, res) => {
   const { name, pin, role } = req.body;
   if (!name || !pin) return res.status(400).json({ error: 'Name and PIN required' });
-  const db = req.db;
-  if (db.users.find(u => u.name.toLowerCase() === name.toLowerCase())) {
-    return res.status(400).json({ error: 'User with that name already exists' });
-  }
+  const { data: existing } = await supabase.from('users').select('id').ilike('name', name).maybeSingle();
+  if (existing) return res.status(400).json({ error: 'User with that name already exists' });
+
   const user = { id: uuidv4(), name, pin, role: role === 'admin' ? 'admin' : 'user' };
-  db.users.push(user);
-  if (!db.rotation.order.includes(user.id)) db.rotation.order.push(user.id);
-  applyRotation(db);
-  writeDB(db);
+  const { error } = await supabase.from('users').insert(user);
+  if (error) return res.status(500).json({ error: error.message });
+
+  // Append to rotation order
+  const { data: last } = await supabase.from('rotation_order').select('position').order('position', { ascending: false }).limit(1).maybeSingle();
+  await supabase.from('rotation_order').insert({ position: (last?.position ?? -1) + 1, user_id: user.id });
+
+  const [order, spaces, { data: rot }] = await Promise.all([
+    getRotationOrder(), getSpaces(),
+    supabase.from('rotation').select('rotation_count').eq('id', 1).single()
+  ]);
+  await applyRotation(rot?.rotation_count || 0, order, spaces);
   res.json(user);
 });
 
-app.put('/api/admin/users/:id', requireAuth, requireAdmin, (req, res) => {
-  const db = req.db;
-  const user = db.users.find(u => u.id === req.params.id);
-  if (!user) return res.status(404).json({ error: 'User not found' });
-  if (req.body.name) user.name = req.body.name;
-  if (req.body.pin) user.pin = req.body.pin;
-  if (req.body.role) user.role = req.body.role === 'admin' ? 'admin' : 'user';
-  writeDB(db);
-  res.json(user);
+app.put('/api/admin/users/:id', requireAuth, requireAdmin, async (req, res) => {
+  const updates = {};
+  if (req.body.name) updates.name = req.body.name;
+  if (req.body.pin)  updates.pin  = req.body.pin;
+  if (req.body.role) updates.role = req.body.role === 'admin' ? 'admin' : 'user';
+  const { data, error } = await supabase.from('users').update(updates).eq('id', req.params.id).select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
 });
 
-app.delete('/api/admin/users/:id', requireAuth, requireAdmin, (req, res) => {
-  const db = req.db;
-  const idx = db.users.findIndex(u => u.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: 'User not found' });
+app.delete('/api/admin/users/:id', requireAuth, requireAdmin, async (req, res) => {
   if (req.params.id === req.user.id) return res.status(400).json({ error: 'Cannot delete yourself' });
-  db.users.splice(idx, 1);
-  db.assignments = db.assignments.filter(a => a.userId !== req.params.id);
-  db.rotation.order = db.rotation.order.filter(id => id !== req.params.id);
-  db.swapRequests = db.swapRequests.filter(
-    r => r.requesterId !== req.params.id && r.targetId !== req.params.id
-  );
-  applyRotation(db);
-  writeDB(db);
+  await supabase.from('rotation_order').delete().eq('user_id', req.params.id);
+  const { error } = await supabase.from('users').delete().eq('id', req.params.id);
+  if (error) return res.status(500).json({ error: error.message });
+  const [order, spaces, { data: rot }] = await Promise.all([
+    getRotationOrder(), getSpaces(),
+    supabase.from('rotation').select('rotation_count').eq('id', 1).single()
+  ]);
+  await applyRotation(rot?.rotation_count || 0, order, spaces);
   res.json({ success: true });
 });
 
-app.post('/api/admin/spaces', requireAuth, requireAdmin, (req, res) => {
+app.post('/api/admin/spaces', requireAuth, requireAdmin, async (req, res) => {
   const { name, description } = req.body;
   if (!name) return res.status(400).json({ error: 'Space name required' });
-  const db = req.db;
   const space = { id: uuidv4(), name, description: description || '' };
-  db.spaces.push(space);
-  applyRotation(db);
-  writeDB(db);
+  const { error } = await supabase.from('spaces').insert(space);
+  if (error) return res.status(500).json({ error: error.message });
+  const [order, spaces, { data: rot }] = await Promise.all([
+    getRotationOrder(), getSpaces(),
+    supabase.from('rotation').select('rotation_count').eq('id', 1).single()
+  ]);
+  await applyRotation(rot?.rotation_count || 0, order, spaces);
   res.json(space);
 });
 
-app.put('/api/admin/spaces/:id', requireAuth, requireAdmin, (req, res) => {
-  const db = req.db;
-  const space = db.spaces.find(s => s.id === req.params.id);
-  if (!space) return res.status(404).json({ error: 'Space not found' });
-  if (req.body.name) space.name = req.body.name;
-  if (req.body.description !== undefined) space.description = req.body.description;
-  writeDB(db);
-  res.json(space);
+app.put('/api/admin/spaces/:id', requireAuth, requireAdmin, async (req, res) => {
+  const updates = {};
+  if (req.body.name) updates.name = req.body.name;
+  if (req.body.description !== undefined) updates.description = req.body.description;
+  const { data, error } = await supabase.from('spaces').update(updates).eq('id', req.params.id).select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
 });
 
-app.delete('/api/admin/spaces/:id', requireAuth, requireAdmin, (req, res) => {
-  const db = req.db;
-  const idx = db.spaces.findIndex(s => s.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: 'Space not found' });
-  db.spaces.splice(idx, 1);
-  db.assignments = db.assignments.filter(a => a.spaceId !== req.params.id);
-  db.swapRequests = db.swapRequests.filter(
-    r => r.requesterSpaceId !== req.params.id && r.targetSpaceId !== req.params.id
-  );
-  applyRotation(db);
-  writeDB(db);
+app.delete('/api/admin/spaces/:id', requireAuth, requireAdmin, async (req, res) => {
+  const { error } = await supabase.from('spaces').delete().eq('id', req.params.id);
+  if (error) return res.status(500).json({ error: error.message });
+  const [order, spaces, { data: rot }] = await Promise.all([
+    getRotationOrder(), getSpaces(),
+    supabase.from('rotation').select('rotation_count').eq('id', 1).single()
+  ]);
+  await applyRotation(rot?.rotation_count || 0, order, spaces);
   res.json({ success: true });
 });
 
-app.put('/api/admin/rotation', requireAuth, requireAdmin, (req, res) => {
-  const { frequency, dayOfWeek, dayOfMonth, order, startNow } = req.body;
-  const db = req.db;
-  if (frequency) db.rotation.frequency = frequency;
-  if (dayOfWeek !== undefined) db.rotation.dayOfWeek = parseInt(dayOfWeek);
-  if (dayOfMonth !== undefined) db.rotation.dayOfMonth = parseInt(dayOfMonth);
-  if (order) db.rotation.order = order;
-
-  if (startNow || !db.rotation.nextRotation) {
-    db.rotation.nextRotation = computeNextRotation(
-      db.rotation.frequency,
-      db.rotation.dayOfWeek,
-      db.rotation.dayOfMonth,
-      null
-    );
+app.put('/api/admin/rotation', requireAuth, requireAdmin, async (req, res) => {
+  const { frequency, dayOfWeek, dayOfMonth, startNow } = req.body;
+  const { data: current } = await supabase.from('rotation').select('*').eq('id', 1).single();
+  const updates = {};
+  if (frequency)             updates.frequency    = frequency;
+  if (dayOfWeek !== undefined) updates.day_of_week = parseInt(dayOfWeek);
+  if (dayOfMonth !== undefined) updates.day_of_month = parseInt(dayOfMonth);
+  const merged = { ...current, ...updates };
+  if (startNow || !current.next_rotation) {
+    updates.next_rotation = computeNextRotation(merged.frequency, merged.day_of_week, merged.day_of_month, null);
   }
-  applyRotation(db);
-  writeDB(db);
-  res.json(db.rotation);
+  await supabase.from('rotation').update(updates).eq('id', 1);
+  const [order, spaces] = await Promise.all([getRotationOrder(), getSpaces()]);
+  await applyRotation(merged.rotation_count || 0, order, spaces);
+  const { data: rot } = await supabase.from('rotation').select('*').eq('id', 1).single();
+  res.json(fmtRotation(rot, order));
 });
 
-app.post('/api/admin/rotation/trigger', requireAuth, requireAdmin, (req, res) => {
-  const db = req.db;
-  db.rotation.lastRotation = new Date().toISOString();
-  db.rotation.rotationCount = (db.rotation.rotationCount || 0) + 1;
-  applyRotation(db);
-  db.rotation.nextRotation = computeNextRotation(
-    db.rotation.frequency,
-    db.rotation.dayOfWeek,
-    db.rotation.dayOfMonth,
-    db.rotation.lastRotation
-  );
-  writeDB(db);
-  res.json({ success: true, assignments: db.assignments, rotation: db.rotation });
+app.post('/api/admin/rotation/trigger', requireAuth, requireAdmin, async (req, res) => {
+  const [{ data: rot }, order, spaces] = await Promise.all([
+    supabase.from('rotation').select('*').eq('id', 1).single(),
+    getRotationOrder(), getSpaces()
+  ]);
+  const newCount = (rot?.rotation_count || 0) + 1;
+  const now = new Date().toISOString();
+  await applyRotation(newCount, order, spaces);
+  const nextRotation = computeNextRotation(rot?.frequency, rot?.day_of_week, rot?.day_of_month, now);
+  await supabase.from('rotation').update({ rotation_count: newCount, last_rotation: now, next_rotation: nextRotation }).eq('id', 1);
+  const { data: assignments } = await supabase.from('assignments').select('*');
+  res.json({ success: true, assignments, rotation: fmtRotation({ ...rot, rotation_count: newCount, last_rotation: now, next_rotation: nextRotation }, order) });
 });
 
-app.put('/api/admin/rotation/order', requireAuth, requireAdmin, (req, res) => {
+app.put('/api/admin/rotation/order', requireAuth, requireAdmin, async (req, res) => {
   const { order } = req.body;
   if (!Array.isArray(order)) return res.status(400).json({ error: 'order must be an array of user IDs' });
-  const db = req.db;
-  db.rotation.order = order;
-  applyRotation(db);
-  writeDB(db);
+  await supabase.from('rotation_order').delete().gte('position', 0);
+  if (order.length) await supabase.from('rotation_order').insert(order.map((uid, i) => ({ position: i, user_id: uid })));
+  const [spaces, { data: rot }] = await Promise.all([
+    getSpaces(),
+    supabase.from('rotation').select('rotation_count').eq('id', 1).single()
+  ]);
+  await applyRotation(rot?.rotation_count || 0, order, spaces);
   res.json({ success: true });
 });
 
