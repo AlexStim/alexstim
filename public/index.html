@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ParkRotate</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ══════════════ LOGIN ══════════════ -->
+<div id="page-login" class="page active">
+  <div class="login-wrap">
+    <div class="login-card">
+      <div class="logo">🅿️</div>
+      <h1>ParkRotate</h1>
+      <p class="subtitle">Parking space rotation manager</p>
+
+      <div class="field">
+        <label>Your name</label>
+        <input id="login-name" type="text" placeholder="Enter your name" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label>PIN</label>
+        <div class="pin-tap-area" id="pin-tap">
+          <div class="pin-dots" id="pin-dots">
+            <div class="pin-dot" id="dot-0"></div>
+            <div class="pin-dot" id="dot-1"></div>
+            <div class="pin-dot" id="dot-2"></div>
+            <div class="pin-dot" id="dot-3"></div>
+          </div>
+        </div>
+        <div class="pin-grid" id="pin-grid">
+          <button class="pin-key" data-n="1">1</button>
+          <button class="pin-key" data-n="2">2</button>
+          <button class="pin-key" data-n="3">3</button>
+          <button class="pin-key" data-n="4">4</button>
+          <button class="pin-key" data-n="5">5</button>
+          <button class="pin-key" data-n="6">6</button>
+          <button class="pin-key" data-n="7">7</button>
+          <button class="pin-key" data-n="8">8</button>
+          <button class="pin-key" data-n="9">9</button>
+          <button class="pin-key" data-n="0" style="grid-column:2">0</button>
+          <button class="pin-key" id="pin-del" style="font-size:1rem">⌫</button>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-full" id="btn-login">Sign in</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ USER DASHBOARD ══════════════ -->
+<div id="page-user" class="page">
+  <nav>
+    <div class="nav-brand">🅿️ <span>ParkRotate</span></div>
+    <button class="nav-tab" id="user-logout-btn">Log out</button>
+  </nav>
+  <main id="user-main">
+    <!-- injected by JS -->
+  </main>
+</div>
+
+<!-- ══════════════ ADMIN DASHBOARD ══════════════ -->
+<div id="page-admin" class="page">
+  <nav>
+    <div class="nav-brand">🅿️ <span>ParkRotate</span></div>
+    <button class="nav-tab active" id="admin-tab-overview" onclick="showAdminTab('overview')">Overview</button>
+    <button class="nav-tab" id="admin-tab-rotation" onclick="showAdminTab('rotation')">Rotation</button>
+    <button class="nav-tab" id="admin-tab-users" onclick="showAdminTab('users')">Users</button>
+    <button class="nav-tab" id="admin-tab-spaces" onclick="showAdminTab('spaces')">Spaces</button>
+    <button class="nav-tab" id="admin-logout-btn">Log out</button>
+  </nav>
+  <main>
+    <div id="admin-overview" class="admin-tab"></div>
+    <div id="admin-rotation" class="admin-tab" style="display:none"></div>
+    <div id="admin-users" class="admin-tab" style="display:none"></div>
+    <div id="admin-spaces" class="admin-tab" style="display:none"></div>
+  </main>
+</div>
+
+<!-- ══════════════ MODALS ══════════════ -->
+<div class="modal-overlay" id="modal-swap">
+  <div class="modal">
+    <h3>Request a Swap</h3>
+    <p style="color:var(--text-muted);font-size:.875rem;margin-bottom:16px">
+      Select a user to request a space swap. They will need to accept.
+    </p>
+    <div class="field">
+      <label>Swap with</label>
+      <select id="swap-target-select"></select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-swap')">Cancel</button>
+      <button class="btn btn-primary" id="btn-confirm-swap">Send Request</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-add-user">
+  <div class="modal">
+    <h3 id="modal-user-title">Add User</h3>
+    <div class="field">
+      <label>Name</label>
+      <input id="new-user-name" type="text" placeholder="Full name" />
+    </div>
+    <div class="field">
+      <label>PIN (4 digits)</label>
+      <input id="new-user-pin" type="number" placeholder="0000" min="0" max="9999" />
+    </div>
+    <div class="field">
+      <label>Role</label>
+      <select id="new-user-role">
+        <option value="user">User</option>
+        <option value="admin">Admin</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-add-user')">Cancel</button>
+      <button class="btn btn-primary" id="btn-save-user">Add User</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-add-space">
+  <div class="modal">
+    <h3 id="modal-space-title">Add Parking Space</h3>
+    <div class="field">
+      <label>Space name / number</label>
+      <input id="new-space-name" type="text" placeholder="e.g. A1, B3, Spot 12" />
+    </div>
+    <div class="field">
+      <label>Description (optional)</label>
+      <input id="new-space-desc" type="text" placeholder="e.g. Near entrance, covered" />
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-add-space')">Cancel</button>
+      <button class="btn btn-primary" id="btn-save-space">Add Space</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

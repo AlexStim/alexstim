@@ -1,0 +1,21 @@
+{
+  "users": [
+    { "id": "admin-1", "name": "Admin", "pin": "0000", "role": "admin" }
+  ],
+  "spaces": [
+    { "id": "space-1", "name": "A1", "description": "Near main entrance" },
+    { "id": "space-2", "name": "A2", "description": "Near main entrance" },
+    { "id": "space-3", "name": "B1", "description": "Second row" }
+  ],
+  "assignments": [],
+  "swapRequests": [],
+  "rotation": {
+    "frequency": "weekly",
+    "dayOfWeek": 1,
+    "dayOfMonth": 1,
+    "lastRotation": null,
+    "nextRotation": null,
+    "rotationCount": 0,
+    "order": ["admin-1"]
+  }
+}
