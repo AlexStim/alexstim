@@ -4,7 +4,14 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 
 const app = express();
-const DB_PATH = path.join(__dirname, 'data', 'db.json');
+const SEED_PATH = path.join(__dirname, 'data', 'db.json');
+const DB_PATH = process.env.VERCEL ? '/tmp/db.json' : SEED_PATH;
+
+function ensureDB() {
+  if (process.env.VERCEL && !fs.existsSync(DB_PATH)) {
+    fs.copyFileSync(SEED_PATH, DB_PATH);
+  }
+}
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -12,6 +19,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // --- DB helpers ---
 
 function readDB() {
+  ensureDB();
   return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
 }
 

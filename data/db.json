@@ -1,21 +1,30 @@
 {
   "users": [
-    { "id": "admin-1", "name": "Admin", "pin": "0000", "role": "admin" }
+    { "id": "admin-1",   "name": "Admin",  "pin": "0000", "role": "admin" },
+    { "id": "demo-u1",   "name": "Sarah",  "pin": "1234", "role": "user"  },
+    { "id": "demo-u2",   "name": "James",  "pin": "5678", "role": "user"  },
+    { "id": "demo-u3",   "name": "Maria",  "pin": "9999", "role": "user"  }
   ],
   "spaces": [
     { "id": "space-1", "name": "A1", "description": "Near main entrance" },
     { "id": "space-2", "name": "A2", "description": "Near main entrance" },
-    { "id": "space-3", "name": "B1", "description": "Second row" }
+    { "id": "space-3", "name": "B1", "description": "Second row, covered" },
+    { "id": "space-4", "name": "B2", "description": "Second row, covered" }
   ],
-  "assignments": [],
+  "assignments": [
+    { "userId": "admin-1", "spaceId": "space-2" },
+    { "userId": "demo-u1", "spaceId": "space-3" },
+    { "userId": "demo-u2", "spaceId": "space-4" },
+    { "userId": "demo-u3", "spaceId": "space-1" }
+  ],
   "swapRequests": [],
   "rotation": {
     "frequency": "weekly",
     "dayOfWeek": 1,
     "dayOfMonth": 1,
-    "lastRotation": null,
-    "nextRotation": null,
-    "rotationCount": 0,
-    "order": ["admin-1"]
+    "lastRotation": "2026-06-02T00:00:00.000Z",
+    "nextRotation": "2026-06-09T00:00:00.000Z",
+    "rotationCount": 1,
+    "order": ["admin-1", "demo-u1", "demo-u2", "demo-u3"]
   }
 }
