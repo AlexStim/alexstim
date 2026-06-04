@@ -12,18 +12,21 @@
 <div id="page-login" class="page active">
   <div class="login-wrap">
     <div class="login-card">
-      <div class="logo">🅿️</div>
-      <h1>ParkRotate</h1>
-      <p class="subtitle">Parking space rotation manager</p>
-
-      <div class="field">
-        <label>Your name</label>
-        <input id="login-name" type="text" placeholder="Enter your name" autocomplete="off" />
+      <div class="login-brand">
+        <div class="brand-icon">&#9776;</div>
+        <span style="font-size:.85rem;font-weight:700;letter-spacing:.06em;color:#1e293b">PARKROTATE</span>
       </div>
-      <div class="field">
-        <label>PIN</label>
-        <div class="pin-tap-area" id="pin-tap">
-          <div class="pin-dots" id="pin-dots">
+      <div class="login-title">Sign in to your account</div>
+      <div class="login-sub">Enter your name and 4-digit PIN</div>
+
+      <div class="form-field">
+        <label class="form-label">Your name</label>
+        <input id="login-name" type="text" placeholder="e.g. Sarah" autocomplete="off" />
+      </div>
+      <div class="form-field">
+        <label class="form-label">PIN</label>
+        <div style="display:flex;justify-content:center;margin:6px 0 4px">
+          <div class="pin-dots">
             <div class="pin-dot" id="dot-0"></div>
             <div class="pin-dot" id="dot-1"></div>
             <div class="pin-dot" id="dot-2"></div>
@@ -41,106 +44,152 @@
           <button class="pin-key" data-n="8">8</button>
           <button class="pin-key" data-n="9">9</button>
           <button class="pin-key" data-n="0" style="grid-column:2">0</button>
-          <button class="pin-key" id="pin-del" style="font-size:1rem">⌫</button>
+          <button class="pin-key" id="pin-del" style="font-size:.9rem">&#9003;</button>
         </div>
       </div>
-      <button class="btn btn-primary btn-full" id="btn-login">Sign in</button>
+      <button class="btn btn-primary btn-full btn-lg" id="btn-login">Sign In</button>
     </div>
   </div>
 </div>
 
-<!-- ══════════════ USER DASHBOARD ══════════════ -->
+<!-- ══════════════ USER PAGE ══════════════ -->
 <div id="page-user" class="page">
-  <nav>
-    <div class="nav-brand">🅿️ <span>ParkRotate</span></div>
-    <button class="nav-tab" id="user-logout-btn">Log out</button>
+  <nav class="app-nav">
+    <div class="nav-top">
+      <div class="nav-brand">
+        <div class="brand-icon">&#9776;</div>
+        <span class="nav-title">PARKROTATE</span>
+      </div>
+      <button class="alert-btn" id="user-alerts-btn">&#128276; Alerts</button>
+    </div>
+    <div class="nav-menu">
+      <button class="menu-item">File</button>
+      <button class="menu-item">View</button>
+      <button class="menu-item">Actions</button>
+      <button class="menu-item">Reports</button>
+      <button class="menu-item">Help</button>
+      <span class="menu-sep"></span>
+      <span class="menu-user">
+        <span id="user-name-display"></span>
+        <button class="btn btn-ghost btn-sm" id="user-logout-btn">Log Out</button>
+      </span>
+    </div>
+    <div class="nav-tabs">
+      <button class="nav-tab active" id="user-tab-space" onclick="showUserTab('space')">My Parking Space</button>
+      <button class="nav-tab" id="user-tab-swaps" onclick="showUserTab('swaps')">Swap Requests</button>
+      <span class="tab-sep"></span>
+    </div>
   </nav>
-  <main id="user-main">
-    <!-- injected by JS -->
+  <main>
+    <div id="user-space" class="user-tab"></div>
+    <div id="user-swaps" class="user-tab" style="display:none"></div>
   </main>
 </div>
 
-<!-- ══════════════ ADMIN DASHBOARD ══════════════ -->
+<!-- ══════════════ ADMIN PAGE ══════════════ -->
 <div id="page-admin" class="page">
-  <nav>
-    <div class="nav-brand">🅿️ <span>ParkRotate</span></div>
-    <button class="nav-tab active" id="admin-tab-overview" onclick="showAdminTab('overview')">Overview</button>
-    <button class="nav-tab" id="admin-tab-rotation" onclick="showAdminTab('rotation')">Rotation</button>
-    <button class="nav-tab" id="admin-tab-users" onclick="showAdminTab('users')">Users</button>
-    <button class="nav-tab" id="admin-tab-spaces" onclick="showAdminTab('spaces')">Spaces</button>
-    <button class="nav-tab" id="admin-logout-btn">Log out</button>
+  <nav class="app-nav">
+    <div class="nav-top">
+      <div class="nav-brand">
+        <div class="brand-icon">&#9776;</div>
+        <span class="nav-title">PARKROTATE</span>
+      </div>
+      <button class="alert-btn" id="admin-alerts-btn">&#128276; Alerts</button>
+    </div>
+    <div class="nav-menu">
+      <button class="menu-item">File</button>
+      <button class="menu-item">View</button>
+      <button class="menu-item">Actions</button>
+      <button class="menu-item">Reports</button>
+      <button class="menu-item">Help</button>
+      <span class="menu-sep"></span>
+      <span class="menu-user">
+        <span>Admin</span>
+        <button class="btn btn-ghost btn-sm" id="admin-logout-btn">Log Out</button>
+      </span>
+    </div>
+    <div class="nav-tabs">
+      <button class="nav-tab active" id="admin-tab-overview" onclick="showAdminTab('overview')">Overview</button>
+      <button class="nav-tab" id="admin-tab-rotation" onclick="showAdminTab('rotation')">Rotation</button>
+      <button class="nav-tab" id="admin-tab-users" onclick="showAdminTab('users')">Users</button>
+      <button class="nav-tab" id="admin-tab-spaces" onclick="showAdminTab('spaces')">Spaces</button>
+      <span class="tab-sep"></span>
+    </div>
   </nav>
   <main>
     <div id="admin-overview" class="admin-tab"></div>
     <div id="admin-rotation" class="admin-tab" style="display:none"></div>
-    <div id="admin-users" class="admin-tab" style="display:none"></div>
-    <div id="admin-spaces" class="admin-tab" style="display:none"></div>
+    <div id="admin-users"    class="admin-tab" style="display:none"></div>
+    <div id="admin-spaces"   class="admin-tab" style="display:none"></div>
   </main>
 </div>
 
 <!-- ══════════════ MODALS ══════════════ -->
 <div class="modal-overlay" id="modal-swap">
   <div class="modal">
-    <h3>Request a Swap</h3>
-    <p style="color:var(--text-muted);font-size:.875rem;margin-bottom:16px">
-      Select a user to request a space swap. They will need to accept.
-    </p>
-    <div class="field">
-      <label>Swap with</label>
-      <select id="swap-target-select"></select>
+    <div class="modal-header"><div class="modal-title">Request Swap</div></div>
+    <div class="modal-body">
+      <p style="color:var(--text-muted);font-size:.78rem;margin-bottom:12px">Select a user to swap your parking space with. They will need to accept the request.</p>
+      <div class="form-field">
+        <label class="form-label">Swap with</label>
+        <select id="swap-target-select"></select>
+      </div>
     </div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="closeModal('modal-swap')">Cancel</button>
-      <button class="btn btn-primary" id="btn-confirm-swap">Send Request</button>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-swap')">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="btn-confirm-swap">Send Request</button>
     </div>
   </div>
 </div>
 
 <div class="modal-overlay" id="modal-add-user">
   <div class="modal">
-    <h3 id="modal-user-title">Add User</h3>
-    <div class="field">
-      <label>Name</label>
-      <input id="new-user-name" type="text" placeholder="Full name" />
+    <div class="modal-header"><div class="modal-title" id="modal-user-title">Add User</div></div>
+    <div class="modal-body">
+      <div class="form-field">
+        <label class="form-label">Full name</label>
+        <input id="new-user-name" type="text" placeholder="e.g. Sarah Connor" />
+      </div>
+      <div class="form-field">
+        <label class="form-label">PIN (4 digits)</label>
+        <input id="new-user-pin" type="number" placeholder="0000" min="0" max="9999" />
+      </div>
+      <div class="form-field">
+        <label class="form-label">Role</label>
+        <select id="new-user-role">
+          <option value="user">User</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
     </div>
-    <div class="field">
-      <label>PIN (4 digits)</label>
-      <input id="new-user-pin" type="number" placeholder="0000" min="0" max="9999" />
-    </div>
-    <div class="field">
-      <label>Role</label>
-      <select id="new-user-role">
-        <option value="user">User</option>
-        <option value="admin">Admin</option>
-      </select>
-    </div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="closeModal('modal-add-user')">Cancel</button>
-      <button class="btn btn-primary" id="btn-save-user">Add User</button>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-add-user')">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="btn-save-user">Add User</button>
     </div>
   </div>
 </div>
 
 <div class="modal-overlay" id="modal-add-space">
   <div class="modal">
-    <h3 id="modal-space-title">Add Parking Space</h3>
-    <div class="field">
-      <label>Space name / number</label>
-      <input id="new-space-name" type="text" placeholder="e.g. A1, B3, Spot 12" />
+    <div class="modal-header"><div class="modal-title" id="modal-space-title">Add Parking Space</div></div>
+    <div class="modal-body">
+      <div class="form-field">
+        <label class="form-label">Space name / number</label>
+        <input id="new-space-name" type="text" placeholder="e.g. A1, B3, Spot 12" />
+      </div>
+      <div class="form-field">
+        <label class="form-label">Description (optional)</label>
+        <input id="new-space-desc" type="text" placeholder="e.g. Near entrance, covered" />
+      </div>
     </div>
-    <div class="field">
-      <label>Description (optional)</label>
-      <input id="new-space-desc" type="text" placeholder="e.g. Near entrance, covered" />
-    </div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="closeModal('modal-add-space')">Cancel</button>
-      <button class="btn btn-primary" id="btn-save-space">Add Space</button>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-add-space')">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="btn-save-space">Add Space</button>
     </div>
   </div>
 </div>
 
 <div id="toast"></div>
-
 <script src="app.js"></script>
 </body>
 </html>
