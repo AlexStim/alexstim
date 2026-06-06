@@ -414,5 +414,9 @@ app.put('/api/admin/rotation/order', requireAuth, requireAdmin, async (req, res)
   res.json({ success: true });
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Parking app running on http://localhost:${PORT}`));
+if (require.main === module) {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => console.log(`Parking app running on http://localhost:${PORT}`));
+}
+
+module.exports = app;
