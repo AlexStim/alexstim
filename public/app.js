@@ -67,6 +67,8 @@ async function attemptLogin() {
       showPage('admin');
       loadAdminOverview();
     } else {
+      const initials = user.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+      document.getElementById('user-avatar').textContent = initials;
       document.getElementById('user-name-display').textContent = user.name;
       showPage('user');
       loadUserSpace();
@@ -96,7 +98,7 @@ document.getElementById('admin-logout-btn').addEventListener('click', logout);
 // ── User: tab switching ────────────────────────────────────
 function showUserTab(tab) {
   document.querySelectorAll('.user-tab').forEach(el => el.style.display = 'none');
-  document.querySelectorAll('.nav-tab[id^="user-tab-"]').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.nav-item[id^="user-tab-"]').forEach(b => b.classList.remove('active'));
   document.getElementById('user-' + tab).style.display = 'block';
   document.getElementById('user-tab-' + tab).classList.add('active');
   if (tab === 'space') loadUserSpace();
@@ -106,99 +108,100 @@ function showUserTab(tab) {
 // ── User: My Space ─────────────────────────────────────────
 async function loadUserSpace() {
   const el = document.getElementById('user-space');
-  el.innerHTML = '<div class="empty">Loading…</div>';
+  el.innerHTML = '<div class="empty-state"><div class="empty-text">Loading…</div></div>';
   try {
     const data = await api('GET', '/me');
     renderUserSpace(data);
-  } catch (e) { el.innerHTML = `<div class="empty">${e.message}</div>`; }
+  } catch (e) { el.innerHTML = `<div class="empty-state"><div class="empty-text">${e.message}</div></div>`; }
 }
 
 function renderUserSpace(data) {
-  const { user, space, nextRotation, lastRotation, rotationFrequency } = data;
+  const { space, nextRotation, lastRotation, rotationFrequency } = data;
   const el = document.getElementById('user-space');
   const nextDate = nextRotation
-    ? new Date(nextRotation).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+    ? new Date(nextRotation).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     : 'Not set';
   const lastDate = lastRotation
-    ? new Date(lastRotation).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+    ? new Date(lastRotation).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     : 'Never';
 
+  if (!space) {
+    el.innerHTML = `
+      <div class="page-header"><div>
+        <div class="page-title">My Parking Space</div>
+        <div class="page-sub">Your current assigned space</div>
+      </div></div>
+      <div class="page-body">
+        <div class="empty-state">
+          <div class="empty-icon">🅿</div>
+          <div class="empty-text">No parking space assigned yet.</div>
+        </div>
+      </div>`;
+    window._meData = data;
+    return;
+  }
+
   el.innerHTML = `
-    <div class="col-layout">
-      <!-- LEFT: space details -->
-      <div class="panel">
-        <div class="panel-head">
-          <span class="panel-title">My Parking Space</span>
-          <button class="btn btn-ghost btn-sm" onclick="loadUserSpace()">&#8635; Refresh</button>
-        </div>
-        <div class="panel-body">
-          ${space ? `
-          <div class="field-row" style="margin-bottom:10px">
-            <div class="field-group">
-              <span class="field-lbl">Space</span>
-              <span class="field-val large-space">${esc(space.name)}</span>
-            </div>
-          </div>
-          <div class="field-row">
-            <div class="field-group">
-              <span class="field-lbl">Description</span>
-              <span class="field-val">${esc(space.description || 'No description')}</span>
-            </div>
-          </div>
-          <div class="field-row">
-            <div class="field-group">
-              <span class="field-lbl">Status</span>
-              <span class="badge badge-space">Assigned</span>
-            </div>
-          </div>` : `
-          <div style="padding:20px 0;text-align:center">
-            <div style="font-size:2rem;margin-bottom:6px">&#128683;</div>
-            <div style="font-weight:600;margin-bottom:3px;font-size:.85rem">No space assigned</div>
-            <div style="font-size:.75rem;color:var(--text-muted)">You are not currently in the rotation.</div>
-          </div>`}
-        </div>
+    <div class="page-header">
+      <div>
+        <div class="page-title">My Parking Space</div>
+        <div class="page-sub">Your current assignment · rotates ${capitalise(rotationFrequency || '—')}</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="loadUserSpace()">Refresh</button>
+    </div>
+    <div class="page-body">
+      <div class="space-hero">
+        <div class="space-hero-eyebrow">Assigned Space</div>
+        <div class="space-hero-name">${esc(space.name)}</div>
+        ${space.description ? `<div class="space-hero-desc">${esc(space.description)}</div>` : ''}
       </div>
 
-      <!-- RIGHT: rotation status -->
-      <div class="panel">
-        <div class="panel-head">
-          <span class="panel-title">Rotation Status</span>
-          ${space ? `<button class="btn btn-blue btn-sm" onclick="openSwapModal()">&#8644; Request Swap</button>` : ''}
+      <div class="two-col">
+        <div class="card">
+          <div class="card-head"><div class="card-title">Rotation Info</div></div>
+          <div class="info-rows">
+            <div class="info-row">
+              <span class="info-label">Schedule</span>
+              <span class="info-val">${capitalise(rotationFrequency || '—')}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Next rotation</span>
+              <span class="info-val">${nextDate}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Last rotation</span>
+              <span class="info-val">${lastDate}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Status</span>
+              <span class="badge badge-green">Assigned</span>
+            </div>
+          </div>
         </div>
-        <div class="panel-body">
-          <div class="field-row" style="margin-bottom:8px">
-            <div class="field-group">
-              <span class="field-lbl">Frequency</span>
-              <span class="field-val">${capitalise(rotationFrequency)}</span>
-            </div>
-          </div>
-          <div class="field-row" style="margin-bottom:8px">
-            <div class="field-group">
-              <span class="field-lbl">Next Rotation</span>
-              <span class="field-val">${nextDate}</span>
-            </div>
-          </div>
-          <div class="field-row">
-            <div class="field-group">
-              <span class="field-lbl">Last Rotation</span>
-              <span class="field-val">${lastDate}</span>
-            </div>
+
+        <div class="card">
+          <div class="card-head"><div class="card-title">Actions</div></div>
+          <div class="card-body">
+            <p style="font-size:.82rem;color:var(--muted);margin-bottom:16px">Want to swap with a colleague? Send a request — they'll need to accept it first.</p>
+            <button class="btn btn-primary" onclick="openSwapModal()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16V4m0 0L3 8m4-4 4 4M17 8v12m0 0 4-4m-4 4-4-4"/></svg>
+              Request Space Swap
+            </button>
           </div>
         </div>
       </div>
-    </div>
-  `;
+    </div>`;
   window._meData = data;
 }
 
 // ── User: Swaps ────────────────────────────────────────────
 async function loadUserSwaps() {
   const el = document.getElementById('user-swaps');
-  el.innerHTML = '<div class="empty">Loading…</div>';
+  el.innerHTML = '<div class="empty-state"><div class="empty-text">Loading…</div></div>';
   try {
     const data = await api('GET', '/me');
     renderUserSwaps(data);
-  } catch (e) { el.innerHTML = `<div class="empty">${e.message}</div>`; }
+  } catch (e) { el.innerHTML = `<div class="empty-state"><div class="empty-text">${e.message}</div></div>`; }
 }
 
 function renderUserSwaps(data) {
@@ -206,87 +209,77 @@ function renderUserSwaps(data) {
   const el = document.getElementById('user-swaps');
 
   const inRows = incoming.length
-    ? incoming.map((r, i) => `
+    ? incoming.map(r => `
       <tr>
-        <td class="col-num">${i + 1}</td>
-        <td><strong>${esc(r.requesterName)}</strong></td>
-        <td>${r.theirSpace ? `<span class="badge badge-space">${esc(r.theirSpace.name)}</span>` : '—'}</td>
-        <td>${r.yourSpace ? `<span class="badge badge-space">${esc(r.yourSpace.name)}</span>` : '—'}</td>
-        <td>${timeAgo(r.createdAt)}</td>
-        <td class="col-actions">
-          <button class="btn btn-success btn-sm" onclick="respondSwap('${r.id}','accept')">Accept</button>
-          <button class="btn btn-danger btn-sm" onclick="respondSwap('${r.id}','reject')">Decline</button>
+        <td class="td-name">${esc(r.requesterName)}</td>
+        <td>${r.theirSpace ? `<span class="badge badge-blue">${esc(r.theirSpace.name)}</span>` : '—'}</td>
+        <td>${r.yourSpace ? `<span class="badge badge-blue">${esc(r.yourSpace.name)}</span>` : '—'}</td>
+        <td style="color:var(--muted)">${timeAgo(r.createdAt)}</td>
+        <td>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-primary btn-sm" onclick="respondSwap('${r.id}','accept')">Accept</button>
+            <button class="btn btn-ghost btn-sm" onclick="respondSwap('${r.id}','reject')">Decline</button>
+          </div>
         </td>
       </tr>`).join('')
-    : '<tr><td colspan="6" class="empty">No incoming requests</td></tr>';
+    : `<tr><td colspan="5"><div class="empty-state" style="padding:28px"><div class="empty-text">No incoming requests</div></div></td></tr>`;
 
   const outRows = outgoing.length
-    ? outgoing.map((r, i) => `
+    ? outgoing.map(r => `
       <tr>
-        <td class="col-num">${i + 1}</td>
-        <td><strong>${esc(r.targetName)}</strong></td>
-        <td>${r.theirSpace ? `<span class="badge badge-space">${esc(r.theirSpace.name)}</span>` : '—'}</td>
-        <td><span class="badge badge-pending">Pending</span></td>
-        <td>${timeAgo(r.createdAt)}</td>
-        <td class="col-actions">
+        <td class="td-name">${esc(r.targetName)}</td>
+        <td>${r.theirSpace ? `<span class="badge badge-blue">${esc(r.theirSpace.name)}</span>` : '—'}</td>
+        <td><span class="badge badge-yellow">Pending</span></td>
+        <td style="color:var(--muted)">${timeAgo(r.createdAt)}</td>
+        <td>
           <button class="btn btn-ghost btn-sm" onclick="cancelSwap('${r.id}')">Cancel</button>
         </td>
       </tr>`).join('')
-    : '<tr><td colspan="6" class="empty">No outgoing requests</td></tr>';
+    : `<tr><td colspan="5"><div class="empty-state" style="padding:28px"><div class="empty-text">No outgoing requests</div></div></td></tr>`;
 
   el.innerHTML = `
-    ${space ? `
-    <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
-      <button class="btn btn-blue" onclick="openSwapModal()">&#8644; Request Swap</button>
-    </div>` : ''}
-
-    <div class="panel" style="margin-bottom:12px">
-      <div class="panel-head">
-        <span class="panel-title">Incoming Swap Requests</span>
-        <button class="btn btn-ghost btn-sm" onclick="loadUserSwaps()">&#8635; Refresh</button>
+    <div class="page-header">
+      <div>
+        <div class="page-title">Swap Requests</div>
+        <div class="page-sub">Manage your parking space swap requests</div>
       </div>
-      <div class="panel-body no-pad">
-        <div class="tbl-wrap">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th class="col-num">#</th>
-                <th>From</th>
-                <th>Their Space</th>
-                <th>Your Space</th>
-                <th>Sent</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
+      ${space ? `<button class="btn btn-primary" onclick="openSwapModal()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16V4m0 0L3 8m4-4 4 4M17 8v12m0 0 4-4m-4 4-4-4"/></svg>
+        Request Swap
+      </button>` : ''}
+    </div>
+    <div class="page-body">
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-head">
+          <div>
+            <div class="card-title">Incoming Requests</div>
+            <div class="card-sub">${incoming.length} pending</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="loadUserSwaps()">Refresh</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>From</th><th>Their Space</th><th>Your Space</th><th>Sent</th><th></th></tr></thead>
             <tbody>${inRows}</tbody>
           </table>
         </div>
       </div>
-    </div>
 
-    <div class="panel">
-      <div class="panel-head">
-        <span class="panel-title">My Sent Requests</span>
-      </div>
-      <div class="panel-body no-pad">
-        <div class="tbl-wrap">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th class="col-num">#</th>
-                <th>To</th>
-                <th>Their Space</th>
-                <th>Status</th>
-                <th>Sent</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <div class="card-title">Sent Requests</div>
+            <div class="card-sub">${outgoing.length} pending</div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>To</th><th>Their Space</th><th>Status</th><th>Sent</th><th></th></tr></thead>
             <tbody>${outRows}</tbody>
           </table>
         </div>
       </div>
-    </div>
-  `;
+    </div>`;
 }
 
 async function openSwapModal() {
@@ -335,7 +328,7 @@ async function cancelSwap(id) {
 // ── Admin: tab switching ────────────────────────────────────
 function showAdminTab(tab) {
   document.querySelectorAll('.admin-tab').forEach(el => el.style.display = 'none');
-  document.querySelectorAll('.nav-tab[id^="admin-tab-"]').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.nav-item[id^="admin-tab-"]').forEach(b => b.classList.remove('active'));
   document.getElementById('admin-' + tab).style.display = 'block';
   document.getElementById('admin-tab-' + tab).classList.add('active');
   if (tab === 'overview') loadAdminOverview();
@@ -347,11 +340,11 @@ function showAdminTab(tab) {
 // ── Admin: Overview ────────────────────────────────────────
 async function loadAdminOverview() {
   const el = document.getElementById('admin-overview');
-  el.innerHTML = '<div class="empty">Loading…</div>';
+  el.innerHTML = '<div class="empty-state"><div class="empty-text">Loading…</div></div>';
   try {
     adminData = await api('GET', '/admin/overview');
     renderAdminOverview(adminData);
-  } catch (e) { el.innerHTML = `<div class="empty">${e.message}</div>`; }
+  } catch (e) { el.innerHTML = `<div class="empty-state"><div class="empty-text">${e.message}</div></div>`; }
 }
 
 function renderAdminOverview(data) {
@@ -360,157 +353,102 @@ function renderAdminOverview(data) {
   const pending = swapRequests.filter(r => r.status === 'pending');
   const assigned = spaces.filter(s => s.assignedTo).length;
   const nextDate = rotation.nextRotation
-    ? new Date(rotation.nextRotation).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-    : 'Not set';
+    ? new Date(rotation.nextRotation).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : 'Not scheduled';
   const lastDate = rotation.lastRotation
-    ? new Date(rotation.lastRotation).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+    ? new Date(rotation.lastRotation).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     : 'Never';
 
-  const assignRows = users.map((u, i) => `
+  const assignRows = users.map(u => `
     <tr>
-      <td class="col-num">${i + 1}</td>
-      <td><strong>${esc(u.name)}</strong></td>
-      <td>${u.role === 'admin' ? '<span class="badge badge-admin">Admin</span>' : '<span class="badge badge-user">User</span>'}</td>
+      <td class="td-name">${esc(u.name)}</td>
+      <td>${u.role === 'admin' ? '<span class="badge badge-purple">Admin</span>' : '<span class="badge badge-gray">User</span>'}</td>
       <td>${u.space
-        ? `<span class="badge badge-space">${esc(u.space.name)}</span>`
-        : '<span class="badge badge-vacant">Unassigned</span>'}</td>
-      <td>${u.space ? esc(u.space.description || '—') : '—'}</td>
+        ? `<span class="badge badge-green">${esc(u.space.name)}</span>`
+        : '<span class="badge badge-gray">Unassigned</span>'}</td>
+      <td style="color:var(--muted)">${u.space ? esc(u.space.description || '—') : '—'}</td>
     </tr>`).join('');
 
   const pendingRows = pending.length
-    ? pending.map((r, i) => {
+    ? pending.map(r => {
         const req = users.find(u => u.id === r.requesterId);
         const tgt = users.find(u => u.id === r.targetId);
         const rs  = spaces.find(s => s.id === r.requesterSpaceId);
         const ts  = spaces.find(s => s.id === r.targetSpaceId);
         return `<tr>
-          <td class="col-num">${i + 1}</td>
-          <td><strong>${req ? esc(req.name) : '?'}</strong></td>
-          <td>${rs ? `<span class="badge badge-space">${esc(rs.name)}</span>` : '—'}</td>
-          <td>&#8644;</td>
-          <td><strong>${tgt ? esc(tgt.name) : '?'}</strong></td>
-          <td>${ts ? `<span class="badge badge-space">${esc(ts.name)}</span>` : '—'}</td>
-          <td>${timeAgo(r.createdAt)}</td>
+          <td class="td-name">${req ? esc(req.name) : '?'}</td>
+          <td>${rs ? `<span class="badge badge-blue">${esc(rs.name)}</span>` : '—'}</td>
+          <td style="color:var(--subtle);font-size:1rem">⇄</td>
+          <td class="td-name">${tgt ? esc(tgt.name) : '?'}</td>
+          <td>${ts ? `<span class="badge badge-blue">${esc(ts.name)}</span>` : '—'}</td>
+          <td style="color:var(--muted)">${timeAgo(r.createdAt)}</td>
         </tr>`;
       }).join('')
-    : '<tr><td colspan="7" class="empty">No pending swap requests</td></tr>';
+    : `<tr><td colspan="6"><div class="empty-state" style="padding:28px"><div class="empty-text">No pending swap requests</div></div></td></tr>`;
 
   el.innerHTML = `
-    <!-- Top two-column summary -->
-    <div class="col-layout">
-      <div class="panel">
-        <div class="panel-head">
-          <span class="panel-title">Parking Overview</span>
-        </div>
-        <div class="panel-body">
-          <div class="field-row" style="margin-bottom:8px">
-            <div class="field-group">
-              <span class="field-lbl">Total Spaces</span>
-              <span class="field-val">${spaces.length}</span>
-            </div>
-            <div class="field-group">
-              <span class="field-lbl">Assigned</span>
-              <span class="field-val">${assigned}</span>
-            </div>
-            <div class="field-group">
-              <span class="field-lbl">Vacant</span>
-              <span class="field-val">${spaces.length - assigned}</span>
-            </div>
-          </div>
-          <div class="field-row">
-            <div class="field-group">
-              <span class="field-lbl">Users</span>
-              <span class="field-val">${users.length}</span>
-            </div>
-            <div class="field-group">
-              <span class="field-lbl">Pending Swaps</span>
-              <span class="field-val">${pending.length}</span>
-            </div>
-            <div class="field-group">
-              <span class="field-lbl">Rotation #</span>
-              <span class="field-val">${rotation.rotationCount}</span>
-            </div>
-          </div>
-        </div>
+    <div class="page-header">
+      <div>
+        <div class="page-title">Overview</div>
+        <div class="page-sub">Parking assignments and system status</div>
       </div>
-
-      <div class="panel">
-        <div class="panel-head">
-          <span class="panel-title">Rotation Status</span>
-          <button class="btn btn-primary btn-sm" onclick="triggerRotation()">&#8635; Rotate Now</button>
-        </div>
-        <div class="panel-body">
-          <div class="field-row" style="margin-bottom:8px">
-            <div class="field-group">
-              <span class="field-lbl">Frequency</span>
-              <span class="field-val">${capitalise(rotation.frequency)}</span>
-            </div>
-          </div>
-          <div class="field-row" style="margin-bottom:8px">
-            <div class="field-group">
-              <span class="field-lbl">Next Rotation</span>
-              <span class="field-val">${nextDate}</span>
-            </div>
-          </div>
-          <div class="field-row">
-            <div class="field-group">
-              <span class="field-lbl">Last Rotation</span>
-              <span class="field-val">${lastDate}</span>
-            </div>
-          </div>
-        </div>
-      </div>
+      <button class="btn btn-ghost btn-sm" onclick="loadAdminOverview()">Refresh</button>
     </div>
-
-    <!-- Assignments table -->
-    <div class="panel" style="margin-bottom:12px">
-      <div class="panel-head">
-        <span class="panel-title">Current Assignments</span>
-        <button class="btn btn-ghost btn-sm" onclick="loadAdminOverview()">&#8635; Refresh</button>
+    <div class="page-body">
+      <div class="stats-row">
+        <div class="stat"><div class="stat-label">Spaces</div><div class="stat-val">${spaces.length}</div></div>
+        <div class="stat"><div class="stat-label">Assigned</div><div class="stat-val">${assigned}</div></div>
+        <div class="stat"><div class="stat-label">Users</div><div class="stat-val">${users.length}</div></div>
+        <div class="stat"><div class="stat-label">Pending Swaps</div><div class="stat-val">${pending.length}</div></div>
       </div>
-      <div class="panel-body no-pad">
-        <div class="tbl-wrap">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th class="col-num">#</th>
-                <th>User</th>
-                <th>Role</th>
-                <th>Assigned Space</th>
-                <th>Description</th>
-              </tr>
-            </thead>
-            <tbody>${assignRows}</tbody>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-head">
+          <div>
+            <div class="card-title">Rotation Status</div>
+            <div class="card-sub">${capitalise(rotation.frequency)} · Cycle #${rotation.rotationCount}</div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="triggerRotation()">Rotate Now</button>
+        </div>
+        <div class="info-rows">
+          <div class="info-row">
+            <span class="info-label">Next rotation</span>
+            <span class="info-val">${nextDate}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Last rotation</span>
+            <span class="info-val">${lastDate}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-head">
+          <div class="card-title">Current Assignments</div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Role</th><th>Space</th><th>Description</th></tr></thead>
+            <tbody>${assignRows || `<tr><td colspan="4"><div class="empty-state" style="padding:28px"><div class="empty-text">No users found</div></div></td></tr>`}</tbody>
           </table>
         </div>
       </div>
-    </div>
 
-    <!-- Pending swaps table -->
-    <div class="panel">
-      <div class="panel-head">
-        <span class="panel-title">Pending Swap Requests (${pending.length})</span>
-      </div>
-      <div class="panel-body no-pad">
-        <div class="tbl-wrap">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th class="col-num">#</th>
-                <th>Requester</th>
-                <th>Their Space</th>
-                <th></th>
-                <th>Target</th>
-                <th>Target Space</th>
-                <th>Sent</th>
-              </tr>
-            </thead>
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <div class="card-title">Pending Swap Requests</div>
+            <div class="card-sub">${pending.length} awaiting response</div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>From</th><th>Space</th><th></th><th>To</th><th>Space</th><th>Sent</th></tr></thead>
             <tbody>${pendingRows}</tbody>
           </table>
         </div>
       </div>
-    </div>
-  `;
+    </div>`;
 }
 
 async function triggerRotation() {
@@ -525,12 +463,12 @@ async function triggerRotation() {
 // ── Admin: Rotation settings ────────────────────────────────
 async function loadAdminRotation() {
   const el = document.getElementById('admin-rotation');
-  el.innerHTML = '<div class="empty">Loading…</div>';
+  el.innerHTML = '<div class="empty-state"><div class="empty-text">Loading…</div></div>';
   try {
     const data = await api('GET', '/admin/overview');
     adminData = data;
     renderAdminRotation(data);
-  } catch (e) { el.innerHTML = `<div class="empty">${e.message}</div>`; }
+  } catch (e) { el.innerHTML = `<div class="empty-state"><div class="empty-text">${e.message}</div></div>`; }
 }
 
 function renderAdminRotation(data) {
@@ -539,59 +477,58 @@ function renderAdminRotation(data) {
   const order = rotation.order.filter(uid => users.find(u => u.id === uid));
 
   el.innerHTML = `
-    <div class="col-layout">
-      <!-- Schedule -->
-      <div class="panel">
-        <div class="panel-head">
-          <span class="panel-title">Rotation Schedule</span>
-        </div>
-        <div class="panel-body">
-          <div class="form-field">
-            <label class="form-label">Frequency</label>
-            <select id="rot-freq">
-              <option value="daily"   ${rotation.frequency==='daily'  ?'selected':''}>Daily</option>
-              <option value="weekly"  ${rotation.frequency==='weekly' ?'selected':''}>Weekly</option>
-              <option value="monthly" ${rotation.frequency==='monthly'?'selected':''}>Monthly</option>
-            </select>
-          </div>
-          <div id="rot-extra"></div>
-          <div style="display:flex;gap:8px;margin-top:12px">
-            <button class="btn btn-primary" onclick="saveRotation()">Save & Close</button>
-            <button class="btn btn-teal" onclick="triggerRotation()">&#8635; Rotate Now</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Order -->
-      <div class="panel">
-        <div class="panel-head">
-          <span class="panel-title">Rotation Order</span>
-        </div>
-        <div class="panel-body">
-          <p style="font-size:.73rem;color:var(--text-muted);margin-bottom:10px">
-            Drag to reorder. Position 1 receives the first space on each rotation cycle.
-          </p>
-          <div class="order-list" id="order-list">
-            ${order.map((uid, i) => {
-              const u = users.find(x => x.id === uid);
-              return u ? `
-              <div class="order-item" draggable="true" data-idx="${i}" data-uid="${uid}"
-                   ondragstart="dragStart(event,${i})"
-                   ondragover="dragOver(event)"
-                   ondrop="dropOrder(event,${i})"
-                   ondragleave="dragLeave(event)">
-                <div class="order-num">${i+1}</div>
-                <span style="font-weight:600">${esc(u.name)}</span>
-                ${u.role==='admin' ? '<span class="badge badge-admin">admin</span>' : ''}
-                <span class="drag-handle">&#8942;</span>
-              </div>` : '';
-            }).join('')}
-          </div>
-          <button class="btn btn-primary" style="margin-top:10px" onclick="saveOrder()">Save Order</button>
-        </div>
+    <div class="page-header">
+      <div>
+        <div class="page-title">Rotation</div>
+        <div class="page-sub">Configure schedule and assignment order</div>
       </div>
     </div>
-  `;
+    <div class="page-body">
+      <div class="two-col">
+        <div class="card">
+          <div class="card-head"><div class="card-title">Schedule</div></div>
+          <div class="card-body">
+            <div class="form-group">
+              <label class="form-label">Frequency</label>
+              <select id="rot-freq">
+                <option value="daily"   ${rotation.frequency==='daily'  ?'selected':''}>Daily</option>
+                <option value="weekly"  ${rotation.frequency==='weekly' ?'selected':''}>Weekly</option>
+                <option value="monthly" ${rotation.frequency==='monthly'?'selected':''}>Monthly</option>
+              </select>
+            </div>
+            <div id="rot-extra"></div>
+            <div style="display:flex;gap:8px;margin-top:8px">
+              <button class="btn btn-primary" onclick="saveRotation()">Save</button>
+              <button class="btn btn-ghost" onclick="triggerRotation()">Rotate Now</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div class="card-title">Rotation Order</div></div>
+          <div class="card-body">
+            <p style="font-size:.82rem;color:var(--muted);margin-bottom:14px">Drag to reorder. Position 1 gets the first space on each cycle.</p>
+            <div class="order-list" id="order-list">
+              ${order.map((uid, i) => {
+                const u = users.find(x => x.id === uid);
+                return u ? `
+                <div class="order-item" draggable="true" data-idx="${i}" data-uid="${uid}"
+                     ondragstart="dragStart(event,${i})"
+                     ondragover="dragOver(event)"
+                     ondrop="dropOrder(event,${i})"
+                     ondragleave="dragLeave(event)">
+                  <div class="order-pos">${i+1}</div>
+                  <span>${esc(u.name)}</span>
+                  ${u.role==='admin' ? '<span class="badge badge-purple" style="font-size:.65rem">admin</span>' : ''}
+                  <span class="drag-handle">⋮⋮</span>
+                </div>` : '';
+              }).join('')}
+            </div>
+            <button class="btn btn-primary" style="margin-top:14px;width:100%" onclick="saveOrder()">Save Order</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
 
   updateRotExtra();
   document.getElementById('rot-freq').addEventListener('change', updateRotExtra);
@@ -603,11 +540,11 @@ function updateRotExtra() {
   const data = adminData?.rotation || {};
   if (freq === 'weekly') {
     const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-    el.innerHTML = `<div class="form-field"><label class="form-label">Day of week</label>
+    el.innerHTML = `<div class="form-group"><label class="form-label">Day of week</label>
       <select id="rot-dow">${days.map((d,i)=>`<option value="${i}" ${data.dayOfWeek===i?'selected':''}>${d}</option>`).join('')}</select></div>`;
   } else if (freq === 'monthly') {
     const doms = Array.from({length:28}, (_,i) => i+1);
-    el.innerHTML = `<div class="form-field"><label class="form-label">Day of month</label>
+    el.innerHTML = `<div class="form-group"><label class="form-label">Day of month</label>
       <select id="rot-dom">${doms.map(d=>`<option value="${d}" ${data.dayOfMonth===d?'selected':''}>${d}${ordinal(d)}</option>`).join('')}</select></div>`;
   } else {
     el.innerHTML = '';
@@ -656,54 +593,50 @@ async function saveOrder() {
 // ── Admin: Users ────────────────────────────────────────────
 async function loadAdminUsers() {
   const el = document.getElementById('admin-users');
-  el.innerHTML = '<div class="empty">Loading…</div>';
+  el.innerHTML = '<div class="empty-state"><div class="empty-text">Loading…</div></div>';
   try {
     const data = await api('GET', '/admin/overview');
     adminData = data;
     renderAdminUsers(data.users);
-  } catch (e) { el.innerHTML = `<div class="empty">${e.message}</div>`; }
+  } catch (e) { el.innerHTML = `<div class="empty-state"><div class="empty-text">${e.message}</div></div>`; }
 }
 
 function renderAdminUsers(users) {
   const el = document.getElementById('admin-users');
-  const rows = users.map((u, i) => `
+  const rows = users.map(u => `
     <tr>
-      <td class="col-num">${i + 1}</td>
-      <td><strong>${esc(u.name)}</strong></td>
-      <td>${u.role === 'admin' ? '<span class="badge badge-admin">Admin</span>' : '<span class="badge badge-user">User</span>'}</td>
+      <td class="td-name">${esc(u.name)}</td>
+      <td>${u.role === 'admin' ? '<span class="badge badge-purple">Admin</span>' : '<span class="badge badge-gray">User</span>'}</td>
       <td>${u.space
-        ? `<span class="badge badge-space">${esc(u.space.name)}</span>`
-        : '<span class="badge badge-vacant">Unassigned</span>'}</td>
-      <td class="col-actions">
-        <button class="btn btn-teal btn-sm" onclick='openEditUser(${JSON.stringify(u)})'>&#9998; Edit</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteUser('${u.id}','${esc(u.name)}')">Delete</button>
+        ? `<span class="badge badge-green">${esc(u.space.name)}</span>`
+        : '<span class="badge badge-gray">Unassigned</span>'}</td>
+      <td>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-ghost btn-sm" onclick='openEditUser(${JSON.stringify(u)})'>Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteUser('${u.id}','${esc(u.name)}')">Delete</button>
+        </div>
       </td>
     </tr>`).join('');
 
   el.innerHTML = `
-    <div class="panel">
-      <div class="panel-head">
-        <span class="panel-title">Users (${users.length})</span>
-        <button class="btn btn-primary btn-sm" onclick="openAddUser()">+ Add User</button>
+    <div class="page-header">
+      <div>
+        <div class="page-title">Users</div>
+        <div class="page-sub">${users.length} registered ${users.length === 1 ? 'user' : 'users'}</div>
       </div>
-      <div class="panel-body no-pad">
-        <div class="tbl-wrap">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th class="col-num">#</th>
-                <th>Name</th>
-                <th>Role</th>
-                <th>Assigned Space</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>${rows || '<tr><td colspan="5" class="empty">No users found</td></tr>'}</tbody>
+      <button class="btn btn-primary btn-sm" onclick="openAddUser()">+ Add User</button>
+    </div>
+    <div class="page-body">
+      <div class="card">
+        <div class="card-head"><div class="card-title">All Users</div></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Role</th><th>Space</th><th>Actions</th></tr></thead>
+            <tbody>${rows || `<tr><td colspan="4"><div class="empty-state" style="padding:28px"><div class="empty-text">No users found</div></div></td></tr>`}</tbody>
           </table>
         </div>
       </div>
-    </div>
-  `;
+    </div>`;
 }
 
 function openAddUser() {
@@ -758,54 +691,50 @@ async function deleteUser(id, name) {
 // ── Admin: Spaces ────────────────────────────────────────────
 async function loadAdminSpaces() {
   const el = document.getElementById('admin-spaces');
-  el.innerHTML = '<div class="empty">Loading…</div>';
+  el.innerHTML = '<div class="empty-state"><div class="empty-text">Loading…</div></div>';
   try {
     const data = await api('GET', '/admin/overview');
     adminData = data;
     renderAdminSpaces(data.spaces);
-  } catch (e) { el.innerHTML = `<div class="empty">${e.message}</div>`; }
+  } catch (e) { el.innerHTML = `<div class="empty-state"><div class="empty-text">${e.message}</div></div>`; }
 }
 
 function renderAdminSpaces(spaces) {
   const el = document.getElementById('admin-spaces');
-  const rows = spaces.map((s, i) => `
+  const rows = spaces.map(s => `
     <tr>
-      <td class="col-num">${i + 1}</td>
-      <td><strong>${esc(s.name)}</strong></td>
-      <td>${esc(s.description || '—')}</td>
+      <td class="td-name">${esc(s.name)}</td>
+      <td style="color:var(--muted)">${esc(s.description || '—')}</td>
       <td>${s.assignedTo
-        ? `<strong>${esc(s.assignedTo.name)}</strong>`
-        : '<span class="badge badge-vacant">Vacant</span>'}</td>
-      <td class="col-actions">
-        <button class="btn btn-teal btn-sm" onclick='openEditSpace(${JSON.stringify(s)})'>&#9998; Edit</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteSpace('${s.id}','${esc(s.name)}')">Delete</button>
+        ? `<span class="td-name">${esc(s.assignedTo.name)}</span>`
+        : '<span class="badge badge-gray">Vacant</span>'}</td>
+      <td>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-ghost btn-sm" onclick='openEditSpace(${JSON.stringify(s)})'>Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteSpace('${s.id}','${esc(s.name)}')">Delete</button>
+        </div>
       </td>
     </tr>`).join('');
 
   el.innerHTML = `
-    <div class="panel">
-      <div class="panel-head">
-        <span class="panel-title">Parking Spaces (${spaces.length})</span>
-        <button class="btn btn-primary btn-sm" onclick="openAddSpace()">+ Add Space</button>
+    <div class="page-header">
+      <div>
+        <div class="page-title">Spaces</div>
+        <div class="page-sub">${spaces.length} parking ${spaces.length === 1 ? 'space' : 'spaces'}</div>
       </div>
-      <div class="panel-body no-pad">
-        <div class="tbl-wrap">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th class="col-num">#</th>
-                <th>Space</th>
-                <th>Description</th>
-                <th>Assigned To</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>${rows || '<tr><td colspan="5" class="empty">No spaces yet</td></tr>'}</tbody>
+      <button class="btn btn-primary btn-sm" onclick="openAddSpace()">+ Add Space</button>
+    </div>
+    <div class="page-body">
+      <div class="card">
+        <div class="card-head"><div class="card-title">All Parking Spaces</div></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Space</th><th>Description</th><th>Assigned To</th><th>Actions</th></tr></thead>
+            <tbody>${rows || `<tr><td colspan="4"><div class="empty-state" style="padding:28px"><div class="empty-text">No spaces yet</div></div></td></tr>`}</tbody>
           </table>
         </div>
       </div>
-    </div>
-  `;
+    </div>`;
 }
 
 function openAddSpace() {
